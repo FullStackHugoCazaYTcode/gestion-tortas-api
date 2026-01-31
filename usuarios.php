@@ -15,6 +15,12 @@ switch ($action) {
     case 'lista':
         listarUsuarios();
         break;
+    case 'actualizarPerfil':
+        if ($method === 'POST') actualizarPerfil();
+        break;
+    case 'cambiarPassword':
+        if ($method === 'POST') cambiarPassword();
+        break;
     default:
         jsonResponse(['error' => 'Acción no válida'], 400);
 }
@@ -111,6 +117,102 @@ function listarUsuarios() {
         
     } catch (PDOException $e) {
         jsonResponse(['error' => 'Error al obtener usuarios'], 500);
+    }
+}
+
+// ==========================================
+// NUEVAS FUNCIONES DE PERFIL
+// ==========================================
+
+function actualizarPerfil() {
+    $data = getJsonInput();
+    
+    if (empty($data['usuario_id'])) {
+        jsonResponse(['error' => 'ID de usuario requerido'], 400);
+    }
+    
+    $usuarioId = (int)$data['usuario_id'];
+    $conn = getConnection();
+    
+    try {
+        // Verificar que el usuario existe
+        $stmt = $conn->prepare("SELECT id FROM usuarios WHERE id = ?");
+        $stmt->execute([$usuarioId]);
+        if (!$stmt->fetch()) {
+            jsonResponse(['error' => 'Usuario no encontrado'], 404);
+        }
+        
+        // Actualizar nombre si se proporcionó
+        if (!empty($data['nombre'])) {
+            $nombre = trim($data['nombre']);
+            if (strlen($nombre) < 2) {
+                jsonResponse(['error' => 'El nombre debe tener al menos 2 caracteres'], 400);
+            }
+            
+            $stmt = $conn->prepare("UPDATE usuarios SET nombre = ? WHERE id = ?");
+            $stmt->execute([$nombre, $usuarioId]);
+        }
+        
+        // Obtener datos actualizados
+        $stmt = $conn->prepare("SELECT id, nombre, email, rol FROM usuarios WHERE id = ?");
+        $stmt->execute([$usuarioId]);
+        $usuario = $stmt->fetch();
+        $usuario['id'] = (int)$usuario['id'];
+        
+        jsonResponse([
+            'success' => true,
+            'message' => 'Perfil actualizado correctamente',
+            'usuario' => $usuario
+        ]);
+        
+    } catch (PDOException $e) {
+        jsonResponse(['error' => 'Error al actualizar perfil'], 500);
+    }
+}
+
+function cambiarPassword() {
+    $data = getJsonInput();
+    
+    if (empty($data['usuario_id']) || empty($data['password_actual']) || empty($data['password_nueva'])) {
+        jsonResponse(['error' => 'Todos los campos son requeridos'], 400);
+    }
+    
+    $usuarioId = (int)$data['usuario_id'];
+    $passwordActual = $data['password_actual'];
+    $passwordNueva = $data['password_nueva'];
+    
+    if (strlen($passwordNueva) < 6) {
+        jsonResponse(['error' => 'La nueva contraseña debe tener al menos 6 caracteres'], 400);
+    }
+    
+    $conn = getConnection();
+    
+    try {
+        // Verificar contraseña actual
+        $stmt = $conn->prepare("SELECT password FROM usuarios WHERE id = ?");
+        $stmt->execute([$usuarioId]);
+        $usuario = $stmt->fetch();
+        
+        if (!$usuario) {
+            jsonResponse(['error' => 'Usuario no encontrado'], 404);
+        }
+        
+        if (!password_verify($passwordActual, $usuario['password'])) {
+            jsonResponse(['error' => 'La contraseña actual es incorrecta'], 401);
+        }
+        
+        // Actualizar contraseña
+        $passwordHash = password_hash($passwordNueva, PASSWORD_DEFAULT);
+        $stmt = $conn->prepare("UPDATE usuarios SET password = ? WHERE id = ?");
+        $stmt->execute([$passwordHash, $usuarioId]);
+        
+        jsonResponse([
+            'success' => true,
+            'message' => 'Contraseña cambiada correctamente'
+        ]);
+        
+    } catch (PDOException $e) {
+        jsonResponse(['error' => 'Error al cambiar contraseña'], 500);
     }
 }
 ?>
